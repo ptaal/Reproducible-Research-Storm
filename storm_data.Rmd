@@ -1,0 +1,487 @@
+---
+title: "Reproducible Research: Peer Assessment 2"
+output: 
+  html_document:
+    keep_md: true
+---
+
+## Synopsis
+This report is providing answers to the two questions listed below:  
+1. Across the United States, which Types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?  
+2. Across the United States, which types of events have the greatest economic consequences?  
+
+## Data Processing - Loading and Processing the Raw Data
+The analysis was done using the [U.S. National Oceanic and Atmospheric Administration's (NOAA)][1] storm databse. This database starts from 1950 and it ends in November of 2011, tracking the characteristics of major storms and weather events in the United States. Below are also some documentations on definitions and answers to some frequently asked questions:  
+
+• [National Weather Service Storm Data Documentation][2]  
+• [National Climatic Data Center Storm Events FAQ][3]  
+
+[1]: https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2
+[2]: https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf
+[3]: https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf
+
+#### Reading the data
+```{r readingdata0,echo=FALSE,cache=TRUE}
+# Loading some dplyr, lubridate, and ggplot2 packages.
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
+Downloading and reading/storing the file in .csv format.
+```{r readingdata1,echo=TRUE,cache=TRUE}
+download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", destfile = "../data/stormdata.csv", method = "curl")
+stormData <- read.csv("../data/stormdata.csv", header = TRUE)
+```
+Saving the date/time of downloading and creating stormData file. Then applying some function to gather more information about the dataset, such as the total of variable names (902297 total rows with 37 columns), name of the variables, etc...
+```{r readingdata2,echo=TRUE,cache=TRUE}
+stormDataAcessTime <- Sys.time()
+dim(stormData)
+names(stormData)
+```
+
+## Results
+#### Finding the most harmful types of events on population health of the United States:
+Here we're providing the results for the first question, to find out the types of events that are most harmful with respect to population health. Our first step is to subset the dataset using only four columns of BGN_DATE, EVTYPE, FATALITIES, and INJURIES (we're using dplyr package to only select the above mentioned columns).
+
+```{r results1.1,echo=TRUE,cache=TRUE}
+popHealth <- select(stormData, BGN_DATE, EVTYPE, FATALITIES, INJURIES)
+```
+Here, we're converting the BGN_TYPE column from factor to date type and only showing the year, month, and day. Using the lubridate package, to filter out all the years for the purpose of grouping the new dataset by years and then finding out from what year all the 48 event types are being included.
+
+```{r results1.2,echo=TRUE,cache=TRUE}
+popHealth$BGN_DATE <- as.Date(strptime(popHealth$BGN_DATE, "%m/%d/%Y"), "%m/%d/%Y")
+## Converting BGN_DATE to only show the year (excluding month and day).
+popHealth$BGN_DATE <- year(popHealth$BGN_DATE)
+## Creating a new database temp and taking out 4 columns from the popHealth databset and filtering by frequency of greater than 0 for either FATALITIES or INJURIES. Then grouping by BGN_DATE(year), following by EVTYPE.
+temp <- unique(as.data.frame(select(popHealth, BGN_DATE, EVTYPE, FATALITIES, INJURIES) %>% filter(FATALITIES > 0 | INJURIES > 0) %>% group_by(BGN_DATE, EVTYPE)))
+sapply(split(temp, temp$BGN_DATE), nrow)
+```
+##### Cleaning data / Creating tidy data
+In the situations, of having multiple event types for one observation/row in the EVTYPE column(cell), and factoring-in the negligence of providing further information on how to handle such cases, it was decided to add new row/s based, on the number of event types that were included in one column cell.
+
+```{r results1.3,echo=TRUE,cache=TRUE}
+dim(temp)
+multiValues <- strsplit(as.character(toupper(temp$EVTYPE)), 'COLD/WIND(*SKIP)(*F)|FROST/FREEZE(*SKIP)(*F)|URBAN/SML(*SKIP)(*F)|SURGE/TIDE(*SKIP)(*F)|URBAN AND SMALL(*SKIP)(*F)|HYPOTHERMIA/EXPOSURE(*SKIP)(*F)|HYPERTHERMIA/EXPOSURE(*SKIP)(*F)|WEATHER/MIX(*SKIP)(*F)|FLOODING/EROSION(*SKIP)(*F)|/|WARM AND DRY(*SKIP)(*F)|LANDSLIDE(*SKIP)(*F)|LANDSLIDES(*SKIP)(*F)| AND | & |- |, ', perl=TRUE)
+temp <- data.frame(BGN_DATE=rep(temp$BGN_DATE, sapply(multiValues, FUN=length)), EVTYPE=unlist(multiValues),FATALITIES=rep(temp$FATALITIES, sapply(multiValues, FUN=length)), INJURIES=rep(temp$INJURIES, sapply(multiValues, FUN=length)))
+dim(temp)
+```
+There are lots of different event type names (EVTYPE) in the dataset and definitely way more than 48 original event type names. Below, we are going to find the exact type names or near exact type names for each of the 48 event type names. This section is going to be long, yet it would help us to have a better/tidier data to work with.
+
+```{r results1.4,echo=TRUE,cache=TRUE}
+## 1.  Astronomical Low Tide
+#  There are no fatality/injury records for Astronomical Low Tide.
+temp$EVTYPE <- ifelse(grepl("*astronomic*", temp$EVTYPE, ignore.case = TRUE), "Astronomical Low Tide", gsub("astronomical", "Astronomical Low Tide", temp$EVTYPE))
+## 2.  Avalanche
+temp$EVTYPE <- ifelse(grepl("*aval*", temp$EVTYPE, ignore.case = TRUE), "Avalanche", gsub("avalanche", "Avalanche", temp$EVTYPE))
+## 3.  Blizzard
+temp$EVTYPE <- ifelse(grepl("*bliz*", temp$EVTYPE, ignore.case = TRUE), "Blizzard", gsub("blizzard", "Blizzard", temp$EVTYPE))
+## 4.  Coastal Flood
+#  Costal storm/Erosion, type names are revised/renamed to Coastal Flood.
+temp$EVTYPE <- ifelse(grepl("*coast*|*tidal*", temp$EVTYPE, ignore.case = TRUE), "Coastal Flood", gsub("coastal", "Coastal Flood", temp$EVTYPE))
+## 5.  Cold/Wind Chill
+#  Low Temperature, type name is revised/renamed to Cold/Wind Chill.
+temp$EVTYPE <- ifelse(grepl("^cold*|*temperature", temp$EVTYPE, ignore.case = TRUE), "Cold/Wind Chill", gsub("Cold/Wind Chill", "Cold/Wind Chil", temp$EVTYPE))
+## 6.  Debris Flow
+#  Slide/Slides, type name is revised/renamed to Debris Flow.
+temp$EVTYPE <- ifelse(grepl("*debris*|^slide*|*lands*", temp$EVTYPE, ignore.case = TRUE), "Debris Flow", gsub("Debris", "Debris Flow", temp$EVTYPE))
+## 7.  Dense Fog
+#  Fog, type name is revised/renamed to Dense Fog.
+temp$EVTYPE <- ifelse(grepl("^fog$|^dense*", temp$EVTYPE, ignore.case = TRUE), "Dense Fog", gsub("dense fog", "Dense Fog", temp$EVTYPE))
+## 8.  Dense Smoke
+# There are no fatality/injury records for Dense Smoke.
+temp$EVTYPE <- ifelse(grepl("*smoke*", temp$EVTYPE, ignore.case = TRUE), "Dense Smoke", gsub("dense smoke", "Dense Smoke", temp$EVTYPE))
+## 9.  Drought
+temp$EVTYPE <- ifelse(grepl("^drought*", temp$EVTYPE, ignore.case = TRUE), "Drought", gsub("drought", "Drought", temp$EVTYPE))
+## 10. Dust Devil
+temp$EVTYPE <- ifelse(grepl("*devil*", temp$EVTYPE, ignore.case = TRUE), "Dust Devil", gsub("devil", "Dust Devil", temp$EVTYPE))
+## 11. Dust Storm
+temp$EVTYPE <- ifelse(grepl("*dust storm*", temp$EVTYPE, ignore.case = TRUE), "Dust Storm", gsub("dust storm", "Dust Storm", temp$EVTYPE))
+## 12. Excessive Heat
+#  Extreme heat type name is revised/renamed to Excessive Heat.
+temp$EVTYPE <- ifelse(grepl("*excessive.[^r].*|*extreme.[^wc].*", temp$EVTYPE, ignore.case = TRUE), "Excessive Heat", gsub("excessiveheat", "Excessive Heat", temp$EVTYPE))
+## 13. Extreme Cold/Wind Chill
+temp$EVTYPE <- ifelse(grepl("^([^c]).*cold*|*extreme wind*", temp$EVTYPE, ignore.case = TRUE), "Extreme Cold/Wind Chill", gsub("extremecoldwindchill", "Extreme Cold/Wind Chill", temp$EVTYPE))
+## 14. Flash Flood
+#  River flood/Mudslide/Mudslides, type names are revised/renamed to Flash Flood.
+temp$EVTYPE <- ifelse(grepl("*flash*|*river*|*mud*", temp$EVTYPE, ignore.case = TRUE), "Flash Flood", gsub("flashflood", "Flash Flood", temp$EVTYPE))
+## 15. Flood
+temp$EVTYPE <- ifelse(grepl("^flood*|^minor*|*stream*", temp$EVTYPE, ignore.case = TRUE), "Flood", gsub("flXXd", "Flood", temp$EVTYPE))
+## 16. Frost/Freeze
+temp$EVTYPE <- ifelse(grepl("*freez*|*frost*", temp$EVTYPE, ignore.case = TRUE), "Frost Freeze", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 17. Funnel Cloud
+temp$EVTYPE <- ifelse(grepl("*funnel*", temp$EVTYPE, ignore.case = TRUE), "Funnel Cloud", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 18. Freezing Fog
+#  Glaze, type name is revised/renamed to Freezing Fog.
+temp$EVTYPE <- ifelse(grepl("*freezing fog*|*glaze*", temp$EVTYPE, ignore.case = TRUE), "Freezing Fog", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 19. Hail
+temp$EVTYPE <- ifelse(grepl("*small*|*hail*", temp$EVTYPE, ignore.case = TRUE), "Hail", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 20. Heat
+#  Heat wave drought/Unseasonably warm/Warm weather, type names are revised/renamed to Heat.
+temp$EVTYPE <- ifelse(grepl("^heat$|^heat.*wave|*record*|*warm*", temp$EVTYPE, ignore.case = TRUE), "Heat", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 21. Heavy Rain
+temp$EVTYPE <- ifelse(grepl("*rain*", temp$EVTYPE, ignore.case = TRUE), "Heavy Rain", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 22. Heavy Snow
+temp$EVTYPE <- ifelse(grepl("*snow*", temp$EVTYPE, ignore.case = TRUE), "Heavy Snow", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 23. High Surf
+#  High seas/Seas/High waves/Heavy seas/High swells/Rough seas/Drowning/High water/Rapidly rising water, type names are revised/renamed to High Surf.
+temp$EVTYPE <- ifelse(grepl("*surf$|*seas$|*wave*|*swells*|*drowning*|*water$", temp$EVTYPE, ignore.case = TRUE), "High Surf", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 24. High Wind
+temp$EVTYPE <- ifelse(grepl("^high wind*|^wind$|^winds$|^non-severe*", temp$EVTYPE, ignore.case = TRUE), "High Wind", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 25. Hurricane (Typhoon)
+temp$EVTYPE <- ifelse(grepl("*hurricane*|*typhoon*", temp$EVTYPE, ignore.case = TRUE), "Hurricane (Typhoon)", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 26. Ice Storm
+#  Ice on road/Icy roads/Black ice/Hypothermia, type names are revised/renamed to Ice Storm.
+temp$EVTYPE <- ifelse(grepl("*ice storm*|*ice$|*icy roads$|*ice on *|^ice roads$|*hyp*", temp$EVTYPE, ignore.case = TRUE), "Ice Storm", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 27. Lake-Effect Snow
+#  There are no fatality/injury records for Lake-Effect Snow.
+temp$EVTYPE <- ifelse(grepl("*effect*", temp$EVTYPE, ignore.case = TRUE), "Lake-Effect Snow", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 28. Lakeshore Flood
+#  There are no fatality/injury records for Lakeshore Flood.
+temp$EVTYPE <- ifelse(grepl("*lake*", temp$EVTYPE, ignore.case = TRUE), "Lakeshore Flood", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 29. Lightning
+temp$EVTYPE <- ifelse(grepl("*light*", temp$EVTYPE, ignore.case = TRUE), "Lightning", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 30. Marine Hail
+#  There are no fatality/injury records for Marine Hail.
+temp$EVTYPE <- ifelse(grepl("*marine hail*", temp$EVTYPE, ignore.case = TRUE), "Marine Hail", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 31. Marine High Wind
+temp$EVTYPE <- ifelse(grepl("*marine high*", temp$EVTYPE, ignore.case = TRUE), "Marine High Wind", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 32. Marine Strong Wind
+temp$EVTYPE <- ifelse(grepl("*marine strong*", temp$EVTYPE, ignore.case = TRUE), "Marine Strong Wind", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 33. Marine Thunderstorm Wind
+#  Marine mishap/Marine accident, type names are revised/renamed to Marine Thunderstorm Wind.
+temp$EVTYPE <- ifelse(grepl("*marine thunderstorm*|*marine ts|*mishap*|*accident*", temp$EVTYPE, ignore.case = TRUE), "Marine Thunderstorm Wind", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 34. Rip Current
+temp$EVTYPE <- ifelse(grepl("*current", temp$EVTYPE, ignore.case = TRUE), "Rip Current", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 35. Seiche
+#  There are no fatality/injury records for Seiche.
+temp$EVTYPE <- ifelse(grepl("*seiche*", temp$EVTYPE, ignore.case = TRUE), "Seiche", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 36. Sleet
+temp$EVTYPE <- ifelse(grepl("*sleet*", temp$EVTYPE, ignore.case = TRUE), "Sleet", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 37. Storm Surge/Tide
+temp$EVTYPE <- ifelse(grepl("*surge*", temp$EVTYPE, ignore.case = TRUE), "Storm Surge/Tide", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 38. Strong Wind
+#  Gusty wind, type name is revised/renamed to Strong Wind.
+temp$EVTYPE <- ifelse(grepl("^strong*|*gusty*", temp$EVTYPE, ignore.case = TRUE), "Strong Wind", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 39. Tunderstorm Wind
+#  Dry microburst/Whirlwind, type names are revised/renamed to Thunderstorm Wind.
+temp$EVTYPE <- ifelse(grepl("^thunderstorm*|^TSTM*|^thunder*|*micro*|*mirc*|*wind storm*|*whirl*|^non tstm*", temp$EVTYPE, ignore.case = TRUE), "Thunderstorm Wind", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 40. Tornado
+#  Mixed precid, type name is revised/renamed to Tornado
+temp$EVTYPE <- ifelse(grepl("^tornado*|*precip*", temp$EVTYPE, ignore.case = TRUE), "Tornado", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 41. Tropical Depression
+#  There are no fatality/injury records for Tropical Depression.
+temp$EVTYPE <- ifelse(grepl("*depression*", temp$EVTYPE, ignore.case = TRUE), "Tropical Depression", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 42. Tropical Storm
+temp$EVTYPE <- ifelse(grepl("*tropical*", temp$EVTYPE, ignore.case = TRUE), "Tropical Storm", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 43. Tsunami
+temp$EVTYPE <- ifelse(grepl("*tsunami*", temp$EVTYPE, ignore.case = TRUE), "Tsunami", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 44. Volcanic Ash
+#  There are no fatality/injury records for Volcanic Ash.
+temp$EVTYPE <- ifelse(grepl("*volcanic*", temp$EVTYPE, ignore.case = TRUE), "Volcanic Ash", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 45. Waterspout
+temp$EVTYPE <- ifelse(grepl("*waterspout*", temp$EVTYPE, ignore.case = TRUE), "Waterspout", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 46. Wildfire
+temp$EVTYPE <- ifelse(grepl("*wild*|*fire*", temp$EVTYPE, ignore.case = TRUE), "Wildfire", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 47. Winter Storm
+temp$EVTYPE <- ifelse(grepl("*winter storm*", temp$EVTYPE, ignore.case = TRUE), "Winter Storm", gsub("XYZ", "XYZ", temp$EVTYPE))
+## 48. Winter Weather
+#  Wintry mix, type name is revised/renamed to Winter Weather.
+temp$EVTYPE <- ifelse(grepl("*winter weather*|*wintry*", temp$EVTYPE, ignore.case = TRUE), "Winter Weather", gsub("XYZ", "XYZ", temp$EVTYPE))
+```
+There are eight event type names, that have zero values, in both Fatalities and Injuries, thereby, they are not included in the final analysis (Astronomical Low Tide, Dense Smoke, Lake-Effect Snow, Lakeshore Flood, Marine Hail, Seiche, Tropical Depression, Volcanic Ash).
+Additionally, 2 of the rows (OTHER and HIGH), have been removed from the final temp dataset, since they are vague and won't correctly represent or can be related to any event types (the only represent a total of 5 counts).
+
+```{r results1.5,echo=TRUE,cache=TRUE}
+temp <- temp[-c(1967,4206),]
+unique(temp$EVTYPE)
+```
+After, manipulating our temp dataset, below are our findings:
+• Tornado, is the only tracked event type from 1950 to 1982.
+• Tornado, Thunderstorm, and Hail, are the only tracked type events from 1983 to 1992.
+• As you may see from the below occurance numbers, too, it is mostly starting from 1993, that most event types are being added/tracked.
+As a conclusion, we're going to modify our temp data, to a smaller dataset, which would only have data starting from 1993 to 2011.
+
+```{r results1.6,echo=TRUE,cache=TRUE}
+countEVTYPE = as.data.frame(count(unique(select(temp, BGN_DATE, unique(EVTYPE)) %>% group_by(BGN_DATE))))
+# Here, we are displaying the numbers of occurrence for each event type.
+countEVTYPE
+# Below, we are creating our smaller new dataset (1993 to 2011).
+dim(temp)
+temp <- as.data.frame(select(temp, BGN_DATE, EVTYPE, FATALITIES, INJURIES) %>% filter(BGN_DATE >= 1993))
+countEVTYPE = as.data.frame(count(unique(select(temp, BGN_DATE, unique(EVTYPE)) %>% group_by(BGN_DATE))))
+dim(temp)
+```
+To see that which event types are the most harmful to the U.S. population health, we are going to sum up the values of fatalities and injuries across years, for each event type. The result is being shown with histogram, and it is clear that tornado, Excessive Heat, and Flood, pose the most harm across the United States.
+
+```{r results1.7,echo=TRUE,cache=TRUE}
+tempTypeSum <- as.data.frame(select(temp, FATALITIES, INJURIES, EVTYPE) %>% group_by(EVTYPE) %>% summarize(HARMS = sum(FATALITIES, INJURIES)))
+# Adding the 8 rows for event types with 0 values.
+tempTypeSum <- rbind(tempTypeSum, data.frame(EVTYPE = as.character(c("Astronomical Low Tide", "Dense Smoke", "Lake-Effect Snow", "Lakeshore Flood", "Marine Hail", "Seiche", "Tropical Depression", "Volcanic Ash")), HARMS = as.numeric(rep(c(0),8))))
+```
+As we may see from the numbers and the plot, Tornado, Excessive Heat, and Flood, have the most harmful types of events to the entire U.S. population health (measuring the fatalities and injuries cause by such events).
+
+```{r results1.8,echo=TRUE,cache=TRUE}
+# Printing out the total numbers for each event type.
+arrange(tempTypeSum, desc(HARMS))
+# Creating the plot to display the graphical model of our dataset.
+theme_set(theme_gray(base_size = 9))
+g <- ggplot(data = tempTypeSum, aes(x = EVTYPE, y = HARMS, fill = EVTYPE)) + geom_bar(stat = "identity") + coord_flip() + guides(fill=FALSE) + ggtitle("Event Types Harms on Population Health of the United States") + labs(x = "Event Types", y = "Total of Injuries and Fatalities")
+g
+```
+  
+#### Finding which types of events have the greatest economic consequences on the United States:
+```{r results2.1,echo=TRUE,cache=TRUE}
+# Creating a new dataset with 6 variables of (BGN_DATE, EVTYPE, PROPDMG, PRODMGEXP, CROPDMG, CROPDMGEXP).
+economicDamage <- select(stormData, BGN_DATE, EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP)
+```
+Below, we are converting the BGN_DATE variable to only show the 4 digits of year. Then, we are creating a new dataset for only values higher than 0 for both PROPDMG and CROPDMG variables.
+
+```{r results2.2,echo=TRUE,cache=TRUE}
+economicDamage$BGN_DATE <- as.Date(strptime(economicDamage$BGN_DATE, "%m/%d/%Y"), "%m/%d/%Y")
+economicDamage$BGN_DATE <- year(economicDamage$BGN_DATE)
+temp2 <- unique(as.data.frame(select(economicDamage, BGN_DATE, EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>% filter(PROPDMG > 0 | CROPDMG > 0) %>% group_by(BGN_DATE, EVTYPE)))
+sapply(split(temp2, temp2$BGN_DATE), nrow)
+```
+##### Cleaning data / Creating tidy data
+Here, we are aiming to consolidate the EVTYPE to our 48 original event types names.
+
+```{r results2.3,echo=TRUE,cache=TRUE}
+multiValues2 <- strsplit(as.character(toupper(temp2$EVTYPE)), 'COLD/WIND(*SKIP)(*F)|FROST/FREEZE(*SKIP)(*F)|URBAN/SML(*SKIP)(*F)|SURGE/TIDE(*SKIP)(*F)|URBAN AND SMALL(*SKIP)(*F)|URBAN/SMALL(*SKIP)(*F)|COOL AND WET(*SKIP)(*F)|HYPOTHERMIA/EXPOSURE(*SKIP)(*F)|HYPERTHERMIA/EXPOSURE(*SKIP)(*F)|WEATHER/MIX(*SKIP)(*F)|FLOODING/EROSION(*SKIP)(*F)|FLOOD/ STREET(*SKIP)(*F)|/|WARM AND DRY(*SKIP)(*F)|LANDSLIDE(*SKIP)(*F)|WIND/AWNING(*SKIP)(*F)|LANDSLIDES(*SKIP)(*F)|WIND/ TREES(*SKIP)(*F)|WIND/ TREE(*SKIP)(*F)| AND | & |- |, ', perl=TRUE)
+temp2 <- data.frame(BGN_DATE=rep(temp2$BGN_DATE, sapply(multiValues2, FUN=length)), EVTYPE=unlist(multiValues2),PROPDMG=rep(temp2$PROPDMG, sapply(multiValues2, FUN=length)), PROPDMGEXP=rep(temp2$PROPDMGEXP, sapply(multiValues2, FUN=length)), CROPDMG=rep(temp2$CROPDMG, sapply(multiValues2, FUN=length)), CROPDMGEXP=rep(temp2$CROPDMGEXP, sapply(multiValues2, FUN=length)))
+dim(temp2)
+```
+Eventually, after processing the below commands, to shorten our EVTYPE variable to match with the original 48 event types names, we come out to match 44 varaibles (after removing varibales of "OTHER" and "?").
+
+```{r results2.4,echo=TRUE,cache=TRUE}
+## 1.  Astronomical Low Tide
+temp2$EVTYPE <- ifelse(grepl("*astronomic*", temp2$EVTYPE, ignore.case = TRUE), "Astronomical Low Tide", gsub("astronomical", "Astronomical Low Tide", temp2$EVTYPE))
+## 2.  Avalanche
+temp2$EVTYPE <- ifelse(grepl("*aval*", temp2$EVTYPE, ignore.case = TRUE), "Avalanche", gsub("avalanche", "Avalanche", temp2$EVTYPE))
+## 3.  Blizzard
+temp2$EVTYPE <- ifelse(grepl("*bliz*", temp2$EVTYPE, ignore.case = TRUE), "Blizzard", gsub("blizzard", "Blizzard", temp2$EVTYPE))
+## 4.  Coastal Flood
+#  Costal storm/Erosion/CSTL flood, type names are revised/renamed to Coastal Flood.
+temp2$EVTYPE <- ifelse(grepl("*coast*|*tidal*|^erosion|*cstl*", temp2$EVTYPE, ignore.case = TRUE), "Coastal Flood", gsub("coastal", "Coastal Flood", temp2$EVTYPE))
+## 5.  Cold/Wind Chill
+#  Low Temperature, type name is revised/renamed to Cold/Wind Chill.
+temp2$EVTYPE <- ifelse(grepl("^cold*|*temperature", temp2$EVTYPE, ignore.case = TRUE), "Cold/Wind Chill", gsub("Cold/Wind Chill", "Cold/Wind Chil", temp2$EVTYPE))
+## 6.  Debris Flow
+#  Slide/Slides/Rock Slide, type names are revised/renamed to Debris Flow.
+temp2$EVTYPE <- ifelse(grepl("*debris*|^slide*|*lands*|*rock*", temp2$EVTYPE, ignore.case = TRUE), "Debris Flow", gsub("Debris", "Debris Flow", temp2$EVTYPE))
+## 7.  Dense Fog
+#  Fog, type name is revised/renamed to Dense Fog.
+temp2$EVTYPE <- ifelse(grepl("^fog$|^dense*", temp2$EVTYPE, ignore.case = TRUE), "Dense Fog", gsub("dense fog", "Dense Fog", temp2$EVTYPE))
+## 8.  Dense Smoke
+#  There are no property damge/crop damage records for Dense Smoke.
+temp2$EVTYPE <- ifelse(grepl("*smoke*", temp2$EVTYPE, ignore.case = TRUE), "Dense Smoke", gsub("dense smoke", "Dense Smoke", temp2$EVTYPE))
+## 9.  Drought
+temp2$EVTYPE <- ifelse(grepl("^drought*", temp2$EVTYPE, ignore.case = TRUE), "Drought", gsub("drought", "Drought", temp2$EVTYPE))
+## 10. Dust Devil
+temp2$EVTYPE <- ifelse(grepl("*devil*", temp2$EVTYPE, ignore.case = TRUE), "Dust Devil", gsub("devil", "Dust Devil", temp2$EVTYPE))
+## 11. Dust Storm
+#  Blowing dust, type name is revised/renamed to Dust Strom.
+temp2$EVTYPE <- ifelse(grepl("*dust storm*|*blowing*", temp2$EVTYPE, ignore.case = TRUE), "Dust Storm", gsub("dust storm", "Dust Storm", temp2$EVTYPE))
+## 12. Excessive Heat
+#  Extreme heat type name is revised/renamed to Excessive Heat.
+temp2$EVTYPE <- ifelse(grepl("*excessive.[^r].*|*extreme.[^wc].*", temp2$EVTYPE, ignore.case = TRUE), "Excessive Heat", gsub("excessiveheat", "Excessive Heat", temp2$EVTYPE))
+## 13. Extreme Cold/Wind Chill
+temp2$EVTYPE <- ifelse(grepl("^([^c]).*cold*|*extreme wind*", temp2$EVTYPE, ignore.case = TRUE), "Extreme Cold/Wind Chill", gsub("extremecoldwindchill", "Extreme Cold/Wind Chill", temp2$EVTYPE))
+## 14. Flash Flood
+#  River flood/Mudslide/Mudslides/Breakup flooding/Rural flood/Dam break, type names are revised/renamed to Flash Flood.
+temp2$EVTYPE <- ifelse(grepl("*flash*|*river*|*mud*|*breakup*|*rural*|*dam break*", temp2$EVTYPE, ignore.case = TRUE), "Flash Flood", gsub("flashflood", "Flash Flood", temp2$EVTYPE))
+## 15. Flood
+#  Severe Turbulence/Urban Flood/Major flood, type name is revised/renamed to Flood.
+temp2$EVTYPE <- ifelse(grepl("^flood*|^minor*|*stream*|*turbulence*|^urban*|major|^ flood*", temp2$EVTYPE, ignore.case = TRUE), "Flood", gsub("flXXd", "Flood", temp2$EVTYPE))
+## 16. Frost/Freeze
+temp2$EVTYPE <- ifelse(grepl("*freez*|*frost*", temp2$EVTYPE, ignore.case = TRUE), "Frost Freeze", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 17. Funnel Cloud
+temp2$EVTYPE <- ifelse(grepl("*funnel*", temp2$EVTYPE, ignore.case = TRUE), "Funnel Cloud", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 18. Freezing Fog
+#  Glaze, type name is revised/renamed to Freezing Fog.
+temp2$EVTYPE <- ifelse(grepl("*freezing fog*|*glaze*", temp2$EVTYPE, ignore.case = TRUE), "Freezing Fog", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 19. Hail
+temp2$EVTYPE <- ifelse(grepl("*small*|*hail*", temp2$EVTYPE, ignore.case = TRUE), "Hail", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 20. Heat
+#  Heat wave drought/Unseasonably warm/Warm weather, type names are revised/renamed to Heat.
+temp2$EVTYPE <- ifelse(grepl("^heat$|^heat.*wave|*record*|*warm*", temp2$EVTYPE, ignore.case = TRUE), "Heat", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 21. Heavy Rain
+#  Cool and wet/Wet conditions, type names are revised/renamed to Heavy Rain.
+temp2$EVTYPE <- ifelse(grepl("*rain*|*shower*|^wet condition*|cool and wet*", temp2$EVTYPE, ignore.case = TRUE), "Heavy Rain", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 22. Heavy Snow
+temp2$EVTYPE <- ifelse(grepl("*snow*", temp2$EVTYPE, ignore.case = TRUE), "Heavy Snow", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 23. High Surf
+#  High seas/Seas/High waves/Heavy seas/High swells/Rough seas/Drowning/High water/Rapidly rising water/High Tide/Beach erosion, type names are revised/renamed to High Surf.
+temp2$EVTYPE <- ifelse(grepl("*surf$|*seas$|*wave*|*swells*|*drowning*|*water$|^high tide*|*high surf advis*|^beach", temp2$EVTYPE, ignore.case = TRUE), "High Surf", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 24. High Wind
+temp2$EVTYPE <- ifelse(grepl("^high wind*|^wind$|^winds$|^non-severe*|high  wind*", temp2$EVTYPE, ignore.case = TRUE), "High Wind", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 25. Hurricane (Typhoon)
+temp2$EVTYPE <- ifelse(grepl("*hurricane*|*typhoon*", temp2$EVTYPE, ignore.case = TRUE), "Hurricane (Typhoon)", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 26. Ice Storm
+#  Ice on road/Icy roads/Black ice/Hypothermia/Ice jam flood, type names are revised/renamed to Ice Storm.
+temp2$EVTYPE <- ifelse(grepl("*ice storm*|*ice$|*icy roads$|*ice on *|^ice roads$|*hyp*|^ice jam|^ice floe", temp2$EVTYPE, ignore.case = TRUE), "Ice Storm", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 27. Lake-Effect Snow
+#  There are no property damge/crop damage records for Lake-Effect Snow.
+temp2$EVTYPE <- ifelse(grepl("*effect*", temp2$EVTYPE, ignore.case = TRUE), "Lake-Effect Snow", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 28. Lakeshore Flood
+temp2$EVTYPE <- ifelse(grepl("*lake*", temp2$EVTYPE, ignore.case = TRUE), "Lakeshore Flood", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 29. Lightning
+temp2$EVTYPE <- ifelse(grepl("*light*|ligntning", temp2$EVTYPE, ignore.case = TRUE), "Lightning", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 30. Marine Hail
+#  There are no property damge/crop damage records for Marine Hail.
+temp2$EVTYPE <- ifelse(grepl("*marine hail*", temp2$EVTYPE, ignore.case = TRUE), "Marine Hail", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 31. Marine High Wind
+temp2$EVTYPE <- ifelse(grepl("*marine high*", temp2$EVTYPE, ignore.case = TRUE), "Marine High Wind", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 32. Marine Strong Wind
+temp2$EVTYPE <- ifelse(grepl("*marine strong*", temp2$EVTYPE, ignore.case = TRUE), "Marine Strong Wind", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 33. Marine Thunderstorm Wind
+#  Marine mishap/Marine accident, type names are revised/renamed to Marine Thunderstorm Wind.
+temp2$EVTYPE <- ifelse(grepl("*marine thunderstorm*|*marine ts|*mishap*|*accident*", temp2$EVTYPE, ignore.case = TRUE), "Marine Thunderstorm Wind", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 34. Rip Current
+temp2$EVTYPE <- ifelse(grepl("*current", temp2$EVTYPE, ignore.case = TRUE), "Rip Current", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 35. Seiche
+#  Squalls, type name is revised/renamed to Seiche.
+temp2$EVTYPE <- ifelse(grepl("*seiche*|*squall*", temp2$EVTYPE, ignore.case = TRUE), "Seiche", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 36. Sleet
+temp2$EVTYPE <- ifelse(grepl("*sleet*", temp2$EVTYPE, ignore.case = TRUE), "Sleet", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 37. Storm Surge/Tide
+temp2$EVTYPE <- ifelse(grepl("*surge*", temp2$EVTYPE, ignore.case = TRUE), "Storm Surge/Tide", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 38. Strong Wind
+#  Gusty wind, type name is revised/renamed to Strong Wind.
+temp2$EVTYPE <- ifelse(grepl("^strong*|*gusty*", temp2$EVTYPE, ignore.case = TRUE), "Strong Wind", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 39. Tunderstorm Wind
+#  Dry microburst/Whirlwind/Wind damage/Downburst/Apache county, type names are revised/renamed to Thunderstorm Wind.
+temp2$EVTYPE <- ifelse(grepl("^thunderstorm*|^TSTM*|^thunder*|*micro*|*mirc*|*wind storm*|*whirl*|^non tstm*|^thude*|^thunerstorm wind*|^tunder*|severe.[^w]|* tstm wind*|^non-tstm wind*|*damage*|*downburst*|*apache*", temp2$EVTYPE, ignore.case = TRUE), "Thunderstorm Wind", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 40. Tornado
+#  Mixed precid, type name is revised/renamed to Tornado
+temp2$EVTYPE <- ifelse(grepl("^tornado*|*precip*| tornado|^torndao", temp2$EVTYPE, ignore.case = TRUE), "Tornado", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 41. Tropical Depression
+#  # There are no property damge/crop damage records for Tropical Depression.
+temp2$EVTYPE <- ifelse(grepl("*depression*|*gradient wind*", temp2$EVTYPE, ignore.case = TRUE), "Tropical Depression", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 42. Tropical Storm
+#  Storm force winds, type name is revised/renamed to Tropical Storm.
+temp2$EVTYPE <- ifelse(grepl("*tropical*|*force*", temp2$EVTYPE, ignore.case = TRUE), "Tropical Storm", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 43. Tsunami
+temp2$EVTYPE <- ifelse(grepl("*tsunami*", temp2$EVTYPE, ignore.case = TRUE), "Tsunami", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 44. Volcanic Ash
+temp2$EVTYPE <- ifelse(grepl("*volcanic*", temp2$EVTYPE, ignore.case = TRUE), "Volcanic Ash", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 45. Waterspout
+temp2$EVTYPE <- ifelse(grepl("*waterspout*", temp2$EVTYPE, ignore.case = TRUE), "Waterspout", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 46. Wildfire
+temp2$EVTYPE <- ifelse(grepl("*wild*|*fire*", temp2$EVTYPE, ignore.case = TRUE), "Wildfire", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 47. Winter Storm
+#  Heavy mix, type name is revised/renamed to Winter Storm.
+temp2$EVTYPE <- ifelse(grepl("*winter storm*|*heavy mix*", temp2$EVTYPE, ignore.case = TRUE), "Winter Storm", gsub("XYZ", "XYZ", temp2$EVTYPE))
+## 48. Winter Weather
+#  Wintry mix/Severe weather, type names are revised/renamed to Winter Weather.
+temp2$EVTYPE <- ifelse(grepl("*winter weather*|*wintry*|^severe weather", temp2$EVTYPE, ignore.case = TRUE), "Winter Weather", gsub("XYZ", "XYZ", temp2$EVTYPE))
+```
+There are four event type names, that have zero values, in both PROPDMG and CROPDMG, thereby, they are not included in the final analysis (Dense Smoke, Lake-Effect Snow, Marine Hail, and Tropical Depression).
+
+We are going to remove rows for "OTHER" and "?", since they are vague in descriptions and also, they won't effect our final results, to a degree that we may be much concerned of.
+
+```{r results2.5,echo=TRUE,cache=TRUE}
+temp2 <- temp2[-c(3251, 3594, 6198, 6341, 11829),]
+unique(temp2$EVTYPE)
+```
+After, manipulating our temp2 dataset, below are out findings:
+• Tornado, is the only tracked event type from 1950 to 1992
+• As you may see from the below occurance numbers, too, it is mostly starting from 1993, that most event types are being added/tracked.
+As a conclusion, we're going to modify our temp data, to a smaller dataset, which would only have data starting from 1993 to 2011.
+
+```{r results2.6,echo=TRUE,cache=TRUE}
+countEVTYPE2 = as.data.frame(count(unique(select(temp2, BGN_DATE, unique(EVTYPE)) %>% group_by(BGN_DATE))))
+# Here, we are displaying the numbers of occurrence for each event type.
+countEVTYPE2
+# Below, we are creating our smaller new dataset (1993 to 2011).
+dim(temp2)
+temp2 <- as.data.frame(select(temp2, BGN_DATE, EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>% filter(BGN_DATE >= 1993))
+countEVTYPE = as.data.frame(count(unique(select(temp2, BGN_DATE, unique(EVTYPE)) %>% group_by(BGN_DATE))))
+dim(temp2)
+```
+Below, we are substituting the following values in PROPDMGEXP and CROPDMGEXP: H/h, K/k, M/m, B/b, +, -, ?, blank/empty character, 0-8 respectfully with: 100, 1000, 1000000, 1000000000, 1, 0, 0, 0, 10.
+
+```{r results2.7,echo=TRUE,cache=TRUE}
+# Disabling scientific notations
+options("scipen"=10)
+# Replacing 0-8, to 10 in PROPDMGEXP
+temp2$PROPDMGEXP <- ifelse(grepl("0|1|2|3|4|5|6|7|8", temp2$PROPDMGEXP, ignore.case = TRUE), 10, gsub("XYZ", "XYZ", temp2$PROPDMGEXP))
+# Replacing +, with 1 in PROPDMGEXP
+temp2$PROPDMGEXP <- ifelse(grepl("+", temp2$PROPDMGEXP, fixed = TRUE), 1, gsub("XYZ", "XYZ", temp2$PROPDMGEXP))
+# Replacing -, with 0 in PROPDMGEXP
+temp2$PROPDMGEXP <- ifelse(grepl("-", temp2$PROPDMGEXP, fixed = TRUE), 0, gsub("XYZ", "XYZ", temp2$PROPDMGEXP))
+# Replacing ?, with 0 in PROPDMGEXP
+temp2$PROPDMGEXP <- ifelse(grepl("?", temp2$PROPDMGEXP, fixed = TRUE), 0, gsub("XYZ", "XYZ", temp2$PROPDMGEXP))
+# Replacing H/h, with 100 in PROPDMGEXP
+temp2$PROPDMGEXP <- ifelse(grepl("h", temp2$PROPDMGEXP, ignore.case = TRUE), 100, gsub("XYZ", "XYZ", temp2$PROPDMGEXP))
+# Replacing K/k, with 1000 in PROPDMGEXP
+temp2$PROPDMGEXP <- ifelse(grepl("k", temp2$PROPDMGEXP, ignore.case = TRUE), 1000, gsub("XYZ", "XYZ", temp2$PROPDMGEXP))
+# Replacing M/m, with 1000000 in PROPDMGEXP
+temp2$PROPDMGEXP <- ifelse(grepl("m", temp2$PROPDMGEXP, ignore.case = TRUE), 1000000, gsub("XYZ", "XYZ", temp2$PROPDMGEXP))
+# Replacing B/b, with 1000000000 in PROPDMGEXP
+temp2$PROPDMGEXP <- ifelse(grepl("b", temp2$PROPDMGEXP, ignore.case = TRUE), 1000000000, gsub("XYZ", "XYZ", temp2$PROPDMGEXP))
+# Replacing ""/blank character, with 0 in PROPDMGEXP
+temp2$PROPDMGEXP <- ifelse(grepl("^[[:space:]]*$", temp2$PROPDMGEXP, ignore.case = TRUE), 0, gsub("XYZ", "XYZ", temp2$PROPDMGEXP))
+####
+# Replacing 0-8, to 10 in CROPDMGEXP
+temp2$CROPDMGEXP <- ifelse(grepl("0|1|2|3|4|5|6|7|8", temp2$CROPDMGEXP, ignore.case = TRUE), 10, gsub("XYZ", "XYZ", temp2$CROPDMGEXP))
+# Replacing +, with 1 in CROPDMGEXP
+temp2$CROPDMGEXP <- ifelse(grepl("+", temp2$CROPDMGEXP, fixed = TRUE), 1, gsub("XYZ", "XYZ", temp2$CROPDMGEXP))
+# Replacing -, with 0 in CROPDMGEXP
+temp2$CROPDMGEXP <- ifelse(grepl("-", temp2$CROPDMGEXP, fixed = TRUE), 0, gsub("XYZ", "XYZ", temp2$CROPDMGEXP))
+# Replacing ?, with 0 in CROPDMGEXP
+temp2$CROPDMGEXP <- ifelse(grepl("?", temp2$CROPDMGEXP, fixed = TRUE), 0, gsub("XYZ", "XYZ", temp2$CROPDMGEXP))
+# Replacing H/h, with 100 in CROPDMGEXP
+temp2$CROPDMGEXP <- ifelse(grepl("h", temp2$CROPDMGEXP, ignore.case = TRUE), 100, gsub("XYZ", "XYZ", temp2$CROPDMGEXP))
+# Replacing K/k, with 1000 in CROPDMGEXP
+temp2$CROPDMGEXP <- ifelse(grepl("k", temp2$CROPDMGEXP, ignore.case = TRUE), 1000, gsub("XYZ", "XYZ", temp2$CROPDMGEXP))
+# Replacing M/m, with 1000000 in CROPDMGEXP
+temp2$CROPDMGEXP <- ifelse(grepl("m", temp2$CROPDMGEXP, ignore.case = TRUE), 1000000, gsub("XYZ", "XYZ", temp2$CROPDMGEXP))
+# Replacing B/b, with 1000000000 in CROPDMGEXP
+temp2$CROPDMGEXP <- ifelse(grepl("b", temp2$CROPDMGEXP, ignore.case = TRUE), 1000000000, gsub("XYZ", "XYZ", temp2$CROPDMGEXP))
+# Replacing ""/blank character, with 0 in CROPDMGEXP
+temp2$CROPDMGEXP <- ifelse(grepl("^[[:space:]]*$", temp2$CROPDMGEXP, ignore.case = TRUE), 0, gsub("XYZ", "XYZ", temp2$CROPDMGEXP))
+dim(temp2)
+```
+We are going to create two new columns of (PROPCOMBINE and CROPCOMBINE), by multiplying the columns of, PROPDMG by PROPDMGEXP and, CROPDMG by CROPDMGEXP. The columns will be added to the temp2 dataset.
+```{r results2.8,echo=TRUE,cache=TRUE}
+temp2$PROPDMGEXP <- as.numeric(temp2$PROPDMGEXP)
+temp2$CROPDMGEXP <- as.numeric(temp2$CROPDMGEXP)
+temp2 <- select(temp2, BGN_DATE, EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>% mutate(PROPCOMBINE = PROPDMG * PROPDMGEXP, CROPCOMBINE = CROPDMG * CROPDMGEXP)
+# Below, we are just displaying the total of monetary damages for each group of property and crop damages
+sum(temp2$PROPCOMBINE)
+sum(temp2$CROPCOMBINE)
+```
+To see that which event types have the greatest economical consequences on the United States, we are going to sum up the values of Property Damages (PROPCOMBINE) and Crop Damages (CROPCOMBINE) across years, for each event type. The result is being shown with histogram, and it is clear that Hurricane (Typhoon), Flood, and Storm Surge/Tide, pose the greatest economical consequences across the United States.
+
+```{r results2.9,echo=TRUE,cache=TRUE}
+tempTypeSum2 <- as.data.frame(select(temp2, PROPCOMBINE, CROPCOMBINE, EVTYPE) %>% group_by(EVTYPE) %>% summarize(HARMS = sum(PROPCOMBINE, CROPCOMBINE)))
+# Adding the 4 rows for event types with 0 values.
+tempTypeSum2 <- rbind(tempTypeSum2, data.frame(EVTYPE = as.character(c("Dense Smoke", "Lake-Effect Snow", "Marine Hail", "Tropical Depression")), HARMS = as.numeric(rep(c(0),4))))
+```
+As we may see from the numbers and the plot, Hurricane (Typhoon), Flood, and Storm Surge/Tide, have the greatest economical consequences on the United States (measuring the monetary damage values of Property and Crop Damages).
+```{r results2.10,echo=TRUE,cache=TRUE}
+options("scipen"=10)
+# Printing out the total numbers for each event type.
+arrange(tempTypeSum2, desc(HARMS))
+# Creating the plot to display the graphical model of our dataset.
+theme_set(theme_gray(base_size = 9))
+g2 <- ggplot(data = tempTypeSum2, aes(x = EVTYPE, y = HARMS, fill = EVTYPE)) + geom_bar(stat = "identity") + coord_flip() + guides(fill=FALSE) + ggtitle("Event Types Economic Consequences in the United States") + labs(x = "Event Types", y = "Total of Property and Corp Damages")
+g2
+```
+  
+Below, we are going to display our 2 datasets of Population Health (tempTypeSum) and Economical Consequences (tempTypeSum2) in one plot. Aiming to show how each event type may compare from one group to another group (from tempTypesum to tempTypeSum2). We are going to show the comparison in percentage (0-100%).
+
+```{r results3,echo=TRUE,cache=TRUE}
+tempMax <- max(tempTypeSum$HARMS)
+temp2Max <- max(tempTypeSum2$HARMS)
+tempTypeSum <- arrange(tempTypeSum, EVTYPE)
+tempTypeSum2 <- arrange(tempTypeSum2, EVTYPE)
+# Converting each rows to percentage for both datasets.
+for(i in 1:dim(tempTypeSum)[1]) {tempTypeSum[i,2] <- (tempTypeSum$HARMS[i]* 100)/tempMax}
+for(i in 1:dim(tempTypeSum2)[1]) {tempTypeSum2[i,2] <- (tempTypeSum2$HARMS[i]* 100)/temp2Max}
+tempTypeSum$HARMS <- round(tempTypeSum$HARMS, 2)
+tempTypeSum2$HARMS <- round(tempTypeSum2$HARMS, 2)
+# Building our plot.
+theme_set(theme_light(base_size = 9))
+ggplot(mapping = aes(x = HARMS, y = EVTYPE)) + geom_point(data = tempTypeSum2, aes(col = "Economical Consequences")) + geom_point(data = tempTypeSum, aes(col = "Population Health")) + ggtitle("Comparison of Economical and Population Health by Event Types in %") + labs(x = "Event Types Percentages Based on The Highest Number in Their Group", y = "Event Types") + scale_colour_manual("Datasets", values = c("Economical Consequences" = "blue", "Population Health" = "green")) + theme(legend.position=c(.65, .90))
+```
