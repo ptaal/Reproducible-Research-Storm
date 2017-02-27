@@ -189,17 +189,17 @@ temp$EVTYPE <- ifelse(grepl("*winter storm*", temp$EVTYPE, ignore.case = TRUE), 
 temp$EVTYPE <- ifelse(grepl("*winter weather*|*wintry*", temp$EVTYPE, ignore.case = TRUE), "Winter Weather", gsub("XYZ", "XYZ", temp$EVTYPE))
 ```
 There are eight event type names, that have zero values, in both Fatalities and Injuries, thereby, they are not included in the final analysis (Astronomical Low Tide, Dense Smoke, Lake-Effect Snow, Lakeshore Flood, Marine Hail, Seiche, Tropical Depression, Volcanic Ash).
-Additionally, 2 of the rows (OTHER and HIGH), have been removed from the final temp dataset, since they are vague and won't correctly represent or can be related to any event types (the only represent a total of 5 counts).
+Additionally, 2 of the rows (OTHER and HIGH), have been removed from the final temp dataset, since they are vague and won't correctly represent or can be related to any event types (they only represent a total of 5 counts).
 
 ```{r results1.5,echo=TRUE,cache=TRUE}
 temp <- temp[-c(1967,4206),]
 unique(temp$EVTYPE)
 ```
-After, manipulating our temp dataset, below are our findings:
-• Tornado, is the only tracked event type from 1950 to 1982.
-• Tornado, Thunderstorm, and Hail, are the only tracked type events from 1983 to 1992.
-• As you may see from the below occurance numbers, too, it is mostly starting from 1993, that most event types are being added/tracked.
-As a conclusion, we're going to modify our temp data, to a smaller dataset, which would only have data starting from 1993 to 2011.
+After, manipulating our temp dataset, below are our findings:  
+• Tornado, is the only tracked event type from 1950 to 1982.  
+• Tornado, Thunderstorm, and Hail, are the only tracked type events from 1983 to 1992.  
+• As you may see from the below occurance numbers, too, it is mostly starting from 1993, that most event types are being added/tracked.  
+As a conclusion, we're going to modify our temp data, to a smaller dataset, which would only have data starting from 1993 to 2011.  
 
 ```{r results1.6,echo=TRUE,cache=TRUE}
 countEVTYPE = as.data.frame(count(unique(select(temp, BGN_DATE, unique(EVTYPE)) %>% group_by(BGN_DATE))))
@@ -383,10 +383,10 @@ We are going to remove rows for "OTHER" and "?", since they are vague in descrip
 temp2 <- temp2[-c(3251, 3594, 6198, 6341, 11829),]
 unique(temp2$EVTYPE)
 ```
-After, manipulating our temp2 dataset, below are out findings:
-• Tornado, is the only tracked event type from 1950 to 1992
-• As you may see from the below occurance numbers, too, it is mostly starting from 1993, that most event types are being added/tracked.
-As a conclusion, we're going to modify our temp data, to a smaller dataset, which would only have data starting from 1993 to 2011.
+After, manipulating our temp2 dataset, below are out findings:  
+• Tornado, is the only tracked event type from 1950 to 1992.  
+• As you may see from the below occurance numbers, too, it is mostly starting from 1993, that most event types are being added/tracked.  
+As a conclusion, we're going to modify our temp data, to a smaller dataset, which would only have data starting from 1993 to 2011.  
 
 ```{r results2.6,echo=TRUE,cache=TRUE}
 countEVTYPE2 = as.data.frame(count(unique(select(temp2, BGN_DATE, unique(EVTYPE)) %>% group_by(BGN_DATE))))
